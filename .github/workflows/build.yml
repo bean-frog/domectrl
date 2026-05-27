@@ -1,0 +1,117 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact: domectrl-linux-x86_64
+            binary: target/release/domectrl
+
+          - name: Windows x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: domectrl-windows-x86_64
+            binary: target/release/domectrl.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libudev-dev \
+            libgtk-3-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxcursor-dev \
+            libglib2.0-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ matrix.target }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ matrix.target }}-cargo-
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage binary (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/domectrl dist/domectrl
+          strip dist/domectrl
+
+      - name: Stage binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item "target/${{ matrix.target }}/release/domectrl.exe" "dist/domectrl.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    name: Create release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Prepare release archives
+        run: |
+          cd artifacts
+          zip -j domectrl-linux-x86_64.zip  domectrl-linux-x86_64/domectrl
+          zip -j domectrl-windows-x86_64.zip domectrl-windows-x86_64/domectrl.exe
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/domectrl-linux-x86_64.zip
+            artifacts/domectrl-windows-x86_64.zip
+          generate_release_notes: true
