@@ -22,6 +22,7 @@ configurable values are:
 |Reconnect interval|Interval (ms) of connection retry|3000|
 |Commands|Bytes to send for raising/lowering sides|a,b,A,B|
 |Config directory|Where to look for config files|User's home dir (OS-specific)|
+<br/>
 ![settings page screenshot](/media/settings.png)
 ### 1.3 Help Page (?)
 domectrl's help page shows some useful information about how to use the program, most of which is an abridged version of this README
